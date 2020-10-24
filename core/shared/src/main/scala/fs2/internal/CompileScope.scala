@@ -106,9 +106,7 @@ private[fs2] final class CompileScope[F[_]] private (
     *
     * Returns scope that has to be used in next compilation step.
     */
-  def open(
-      interruptible: Option[Concurrent[F]]
-  ): F[Either[Throwable, CompileScope[F]]] = {
+  def open(interruptible: Option[Concurrent[F]]): F[Either[Throwable, CompileScope[F]]] = {
     /*
      * Creates a context for a new scope.
      *
@@ -240,10 +238,8 @@ private[fs2] final class CompileScope[F[_]] private (
           resultResources =>
             F.flatMap(self.interruptible.map(_.cancelParent).getOrElse(F.unit)) { _ =>
               F.map(self.parent.fold(F.unit)(_.releaseChildScope(self.id))) { _ =>
-                val results = resultChildren.fold(List(_), _ => Nil) ++ resultResources.fold(
-                  List(_),
-                  _ => Nil
-                )
+                val results =
+                  resultChildren.fold(List(_), _ => Nil) ++ resultResources.fold(List(_), _ => Nil)
                 CompositeFailure.fromList(results.toList).toLeft(())
               }
             }
@@ -478,10 +474,9 @@ private[fs2] object CompileScope {
       * @param interruptible  Whether the child scope should be interruptible.
       * @param newScopeId     The id of the new scope.
       */
-    def childContext(
-        interruptible: Option[Concurrent[F]],
-        newScopeId: Token
-    )(implicit F: Sync[F]): F[InterruptContext[F]] =
+    def childContext(interruptible: Option[Concurrent[F]], newScopeId: Token)(
+        implicit F: Sync[F]
+    ): F[InterruptContext[F]] =
       interruptible
         .map { concurrent =>
           F.flatMap(concurrent.start(self.deferred.get)) { fiber =>
@@ -517,10 +512,9 @@ private[fs2] object CompileScope {
       *                       continuation in case of interruption.
       * @param newScopeId     The id of the new scope.
       */
-    def unsafeFromInterruptible[F[_]](
-        interruptible: Option[Concurrent[F]],
-        newScopeId: Token
-    )(implicit F: Sync[F]): Option[InterruptContext[F]] =
+    def unsafeFromInterruptible[F[_]](interruptible: Option[Concurrent[F]], newScopeId: Token)(
+        implicit F: Sync[F]
+    ): Option[InterruptContext[F]] =
       interruptible.map { concurrent =>
         InterruptContext[F](
           concurrent = concurrent,

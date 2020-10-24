@@ -86,11 +86,7 @@ private[fs2] trait Subscribe[F[_], A, Selector] {
 private[fs2] trait PubSub[F[_], I, O, Selector] extends Publish[F, I] with Subscribe[F, O, Selector]
 
 private[fs2] object PubSub {
-  private final case class Publisher[F[_], A](
-      token: Token,
-      i: A,
-      signal: Deferred[F, Unit]
-  ) {
+  private final case class Publisher[F[_], A](token: Token, i: A, signal: Deferred[F, Unit]) {
     def complete(implicit F: Concurrent[F]): F[Unit] =
       F.start(signal.complete(())).void
   }
@@ -623,10 +619,7 @@ private[fs2] object PubSub {
         * @param qs           State of the strategy to be inspected
         * @param inspected    List of subscribers that have seen the `qs` already
         */
-      final case class State[S](
-          qs: S,
-          inspected: Set[Token]
-      )
+      final case class State[S](qs: S, inspected: Set[Token])
 
       /** Allows to enhance the supplied strategy by ability to inspect the state.
         * If the `S` is same as previous state (by applying the supplied `Eq` then

@@ -57,15 +57,11 @@ class SubscriberStabilitySpec extends Fs2Suite {
 
       // All the other methods just delegating to io
       def pure[A](x: A): IO[A] = io.pure(x)
-      def handleErrorWith[A](fa: IO[A])(
-          f: Throwable => IO[A]
-      ): IO[A] = io.handleErrorWith(fa)(f)
+      def handleErrorWith[A](fa: IO[A])(f: Throwable => IO[A]): IO[A] = io.handleErrorWith(fa)(f)
       def raiseError[A](e: Throwable): IO[A] = io.raiseError(e)
       def async[A](k: (scala.util.Either[Throwable, A] => Unit) => Unit): IO[A] =
         io.async(k)
-      def asyncF[A](
-          k: (scala.util.Either[Throwable, A] => Unit) => IO[Unit]
-      ): IO[A] = io.asyncF(k)
+      def asyncF[A](k: (scala.util.Either[Throwable, A] => Unit) => IO[Unit]): IO[A] = io.asyncF(k)
       def bracketCase[A, B](acquire: IO[A])(use: A => IO[B])(
           release: (A, ExitCase[Throwable]) => IO[Unit]
       ): IO[B] =
@@ -73,10 +69,7 @@ class SubscriberStabilitySpec extends Fs2Suite {
       def racePair[A, B](
           fa: IO[A],
           fb: IO[B]
-      ): IO[scala.util.Either[
-        (A, Fiber[IO, B]),
-        (Fiber[IO, A], B)
-      ]] =
+      ): IO[scala.util.Either[(A, Fiber[IO, B]), (Fiber[IO, A], B)]] =
         io.racePair(fa, fb)
       def start[A](fa: IO[A]): IO[Fiber[IO, A]] =
         io.start(fa)

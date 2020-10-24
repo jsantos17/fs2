@@ -49,8 +49,5 @@ class StreamLawsSuite extends Fs2Suite {
   )
   checkAll("MonoidK[Stream[F, *]]", MonoidKTests[Stream[IO, *]].monoidK[Int])
   checkAll("Defer[Stream[F, *]]", DeferTests[Stream[IO, *]].defer[Int])
-  checkAll(
-    "Align[Stream[F, *]]",
-    AlignTests[Stream[IO, *]].align[Int, Int, Int, Int]
-  )
+  checkAll("Align[Stream[F, *]]", AlignTests[Stream[IO, *]].align[Int, Int, Int, Int])
 }

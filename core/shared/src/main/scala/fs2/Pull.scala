@@ -204,8 +204,8 @@ object Pull extends PullLowPriority {
     new Pull(FreeC.suspend(p.free))
 
   /** `Sync` instance for `Pull`. */
-  implicit def syncInstance[F[_], O](implicit
-      ev: ApplicativeError[F, Throwable]
+  implicit def syncInstance[F[_], O](
+      implicit ev: ApplicativeError[F, Throwable]
   ): Sync[Pull[F, O, *]] = {
     val _ = ev
     new PullSyncInstance[F, O]
@@ -243,10 +243,8 @@ private[fs2] class PullSyncInstance[F[_], O] extends Sync[Pull[F, O, *]] {
   def handleErrorWith[A](fa: Pull[F, O, A])(h: Throwable => Pull[F, O, A]) =
     fa.handleErrorWith(h)
   def suspend[R](p: => Pull[F, O, R]) = Pull.suspend(p)
-  def bracketCase[A, B](acquire: Pull[F, O, A])(
-      use: A => Pull[F, O, B]
-  )(release: (A, ExitCase[Throwable]) => Pull[F, O, Unit]): Pull[F, O, B] =
-    new Pull(
-      FreeC.bracketCase(acquire.get, (a: A) => use(a).get, (a: A, c) => release(a, c).get)
-    )
+  def bracketCase[A, B](acquire: Pull[F, O, A])(use: A => Pull[F, O, B])(
+      release: (A, ExitCase[Throwable]) => Pull[F, O, Unit]
+  ): Pull[F, O, B] =
+    new Pull(FreeC.bracketCase(acquire.get, (a: A) => use(a).get, (a: A, c) => release(a, c).get))
 }

@@ -57,12 +57,7 @@ package object io {
       blocker: Blocker,
       closeAfterUse: Boolean = true
   )(implicit F: Sync[F], cs: ContextShift[F]): Stream[F, Byte] =
-    readInputStreamGeneric(
-      fis,
-      F.delay(new Array[Byte](chunkSize)),
-      blocker,
-      closeAfterUse
-    )
+    readInputStreamGeneric(fis, F.delay(new Array[Byte](chunkSize)), blocker, closeAfterUse)
 
   /** Reads all bytes from the specified `InputStream` with a buffer size of `chunkSize`.
     * Set `closeAfterUse` to false if the `InputStream` should not be closed after use.
@@ -80,16 +75,10 @@ package object io {
       blocker: Blocker,
       closeAfterUse: Boolean = true
   )(implicit F: Sync[F], cs: ContextShift[F]): Stream[F, Byte] =
-    readInputStreamGeneric(
-      fis,
-      F.pure(new Array[Byte](chunkSize)),
-      blocker,
-      closeAfterUse
-    )
+    readInputStreamGeneric(fis, F.pure(new Array[Byte](chunkSize)), blocker, closeAfterUse)
 
   private def readBytesFromInputStream[F[_]](is: InputStream, buf: Array[Byte], blocker: Blocker)(
-      implicit
-      F: Sync[F],
+      implicit F: Sync[F],
       cs: ContextShift[F]
   ): F[Option[Chunk[Byte]]] =
     blocker.delay(is.read(buf)).map { numBytes =>
@@ -149,10 +138,7 @@ package object io {
     *
     * If none of those happens, the stream will run forever.
     */
-  def readOutputStream[F[_]: Concurrent: ContextShift](
-      blocker: Blocker,
-      chunkSize: Int
-  )(
+  def readOutputStream[F[_]: Concurrent: ContextShift](blocker: Blocker, chunkSize: Int)(
       f: OutputStream => F[Unit]
   ): Stream[F, Byte] = {
     val mkOutput: Resource[F, (OutputStream, InputStream)] =
@@ -234,9 +220,9 @@ package object io {
 
   /** Like [[toInputStream]] but returns a `Resource` rather than a single element stream.
     */
-  def toInputStreamResource[F[_]](
-      source: Stream[F, Byte]
-  )(implicit F: ConcurrentEffect[F]): Resource[F, InputStream] =
+  def toInputStreamResource[F[_]](source: Stream[F, Byte])(
+      implicit F: ConcurrentEffect[F]
+  ): Resource[F, InputStream] =
     JavaInputOutputStream.toInputStream(source)
 
   private[io] def asyncYield[F[_], A](

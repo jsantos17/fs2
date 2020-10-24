@@ -60,10 +60,7 @@ object Sink {
     * If either `halts` the evaluation will halt too.
     */
   @deprecated("Use stream.observeEither(left, right)", "1.0.2")
-  def either[F[_]: Concurrent, L, R](
-      left: Sink[F, L],
-      right: Sink[F, R]
-  ): Sink[F, Either[L, R]] =
+  def either[F[_]: Concurrent, L, R](left: Sink[F, L], right: Sink[F, R]): Sink[F, Either[L, R]] =
     _.observe(_.collect { case Left(l) => l }.through(left))
       .through(_.collect { case Right(r) => r }.through(right))
 }

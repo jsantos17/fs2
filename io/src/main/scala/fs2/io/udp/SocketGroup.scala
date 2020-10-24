@@ -37,10 +37,7 @@ import java.nio.channels.{ClosedChannelException, DatagramChannel}
 import cats.effect.{Blocker, Concurrent, ContextShift, Resource, Sync}
 import cats.syntax.all._
 
-final class SocketGroup(
-    asg: AsynchronousSocketGroup,
-    blocker: Blocker
-) {
+final class SocketGroup(asg: AsynchronousSocketGroup, blocker: Blocker) {
 
   /** Provides a UDP Socket that, when run, will bind to the specified address.
     *

@@ -164,9 +164,9 @@ object Queue {
       forStrategy(Strategy.boundedFifo(maxSize))
 
     /** Creates a bounded queue terminated by enqueueing `None`. All elements before `None` are preserved. */
-    def boundedNoneTerminated[F[_], A](
-        maxSize: Int
-    )(implicit F: Concurrent[F]): G[NoneTerminatedQueue[F, A]] =
+    def boundedNoneTerminated[F[_], A](maxSize: Int)(
+        implicit F: Concurrent[F]
+    ): G[NoneTerminatedQueue[F, A]] =
       forStrategyNoneTerminated(PubSub.Strategy.closeDrainFirst(Strategy.boundedFifo(maxSize)))
 
     /** Creates a queue which stores the last `maxSize` enqueued elements and which never blocks on enqueue. */
@@ -174,14 +174,14 @@ object Queue {
       forStrategy(Strategy.circularBuffer(maxSize))
 
     /** Creates a queue terminated by enqueueing `None`. All elements before `None` are preserved and never blocks on enqueue. */
-    def circularBufferNoneTerminated[F[_], A](
-        maxSize: Int
-    )(implicit F: Concurrent[F]): G[NoneTerminatedQueue[F, A]] =
+    def circularBufferNoneTerminated[F[_], A](maxSize: Int)(
+        implicit F: Concurrent[F]
+    ): G[NoneTerminatedQueue[F, A]] =
       forStrategyNoneTerminated(PubSub.Strategy.closeDrainFirst(Strategy.circularBuffer(maxSize)))
 
     /** Created a bounded queue that distributed always at max `fairSize` elements to any subscriber. */
-    def fairBounded[F[_], A](maxSize: Int, fairSize: Int)(implicit
-        F: Concurrent[F]
+    def fairBounded[F[_], A](maxSize: Int, fairSize: Int)(
+        implicit F: Concurrent[F]
     ): G[Queue[F, A]] =
       forStrategy(Strategy.boundedFifo(maxSize).transformSelector[Int]((sz, _) => sz.min(fairSize)))
 
@@ -194,8 +194,8 @@ object Queue {
       forStrategy(Strategy.synchronous)
 
     /** Like [[synchronous]], except that any enqueue of `None` will never block and cancels any dequeue operation. */
-    def synchronousNoneTerminated[F[_], A](implicit
-        F: Concurrent[F]
+    def synchronousNoneTerminated[F[_], A](
+        implicit F: Concurrent[F]
     ): G[NoneTerminatedQueue[F, A]] =
       forStrategyNoneTerminated(PubSub.Strategy.closeNow(Strategy.synchronous))
 
@@ -306,9 +306,9 @@ object Queue {
     in[F].bounded(maxSize)
 
   /** Creates a bounded queue terminated by enqueueing `None`. All elements before `None` are preserved. */
-  def boundedNoneTerminated[F[_], A](
-      maxSize: Int
-  )(implicit F: Concurrent[F]): F[NoneTerminatedQueue[F, A]] =
+  def boundedNoneTerminated[F[_], A](maxSize: Int)(
+      implicit F: Concurrent[F]
+  ): F[NoneTerminatedQueue[F, A]] =
     in[F].boundedNoneTerminated(maxSize)
 
   /** Creates a queue which stores the last `maxSize` enqueued elements and which never blocks on enqueue. */
@@ -316,9 +316,9 @@ object Queue {
     in[F].circularBuffer(maxSize)
 
   /** Creates a queue terminated by enqueueing `None`. All elements before `None` are preserved and never blocks on enqueue. */
-  def circularBufferNoneTerminated[F[_], A](
-      maxSize: Int
-  )(implicit F: Concurrent[F]): F[NoneTerminatedQueue[F, A]] =
+  def circularBufferNoneTerminated[F[_], A](maxSize: Int)(
+      implicit F: Concurrent[F]
+  ): F[NoneTerminatedQueue[F, A]] =
     in[F].circularBufferNoneTerminated(maxSize)
 
   /** Created a bounded queue that distributed always at max `fairSize` elements to any subscriber. */
@@ -472,18 +472,14 @@ object InspectableQueue {
       forStrategy(Queue.Strategy.boundedFifo[A](maxSize))(_.headOption)(_.size)
 
     /** Creates a queue which stores the last `maxSize` enqueued elements and which never blocks on enqueue. */
-    def circularBuffer[F[_], A](
-        maxSize: Int
-    )(implicit F: Concurrent[F]): G[InspectableQueue[F, A]] =
+    def circularBuffer[F[_], A](maxSize: Int)(
+        implicit F: Concurrent[F]
+    ): G[InspectableQueue[F, A]] =
       forStrategy(Queue.Strategy.circularBuffer[A](maxSize))(_.headOption)(_.size)
 
     private[fs2] def forStrategy[F[_]: Concurrent, S, A](
         strategy: PubSub.Strategy[A, Chunk[A], S, Int]
-    )(
-        headOf: S => Option[A]
-    )(
-        sizeOf: S => Int
-    ): G[InspectableQueue[F, A]] = {
+    )(headOf: S => Option[A])(sizeOf: S => Int): G[InspectableQueue[F, A]] = {
       implicit val SyncG: Sync[G] = G
       implicit def eqInstance: Eq[S] = Eq.fromUniversalEquals[S]
       PubSub.in[G].from(PubSub.Strategy.Inspectable.strategy(strategy)).map { pubSub =>
@@ -532,11 +528,9 @@ object InspectableQueue {
           def dequeueBatch: Pipe[F, Int, A] =
             _.flatMap { sz =>
               Stream
-                .evalUnChunk(
-                  pubSub.get(Right(sz)).map {
-                    _.getOrElse(Chunk.empty)
-                  }
-                )
+                .evalUnChunk(pubSub.get(Right(sz)).map {
+                  _.getOrElse(Chunk.empty)
+                })
             }
 
           def peek1: F[A] =

@@ -68,9 +68,9 @@ object PubSub {
           strategy.unsubscribe(selector, queueState)
       }
 
-    def bounded[A, S](
-        maxSize: Int
-    )(strategy: Strategy[A, Chunk[A], S, Int])(f: S => Int): Strategy[A, Chunk[A], S, Int] =
+    def bounded[A, S](maxSize: Int)(strategy: Strategy[A, Chunk[A], S, Int])(
+        f: S => Int
+    ): Strategy[A, Chunk[A], S, Int] =
       convert(fs2.concurrent.PubSub.Strategy.bounded(maxSize)(strategy)(f))
 
     def closeNow[I, O, S, Sel](

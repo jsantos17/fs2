@@ -146,13 +146,7 @@ class BracketSuite extends Fs2Suite {
         .toList
         .map { _ =>
           assert(
-            buffer.toList == List(
-              "Acquired",
-              "Used",
-              "FlatMapped",
-              "ReleaseInvoked",
-              "Released"
-            )
+            buffer.toList == List("Acquired", "Used", "FlatMapped", "ReleaseInvoked", "Released")
           )
         }
     }

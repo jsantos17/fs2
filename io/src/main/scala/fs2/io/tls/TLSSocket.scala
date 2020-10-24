@@ -58,10 +58,7 @@ object TLSSocket {
   ): Resource[F, TLSSocket[F]] =
     Resource.make(mk(socket, engine))(_.close)
 
-  private def mk[F[_]: Concurrent](
-      socket: Socket[F],
-      engine: TLSEngine[F]
-  ): F[TLSSocket[F]] =
+  private def mk[F[_]: Concurrent](socket: Socket[F], engine: TLSEngine[F]): F[TLSSocket[F]] =
     for {
       readSem <- Semaphore(1)
     } yield new TLSSocket[F] {

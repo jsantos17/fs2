@@ -224,15 +224,13 @@ class FileSuite extends BaseFileSuite {
 
   group("copy") {
     test("returns a path to the new file") {
-      assert(
-        (for {
-          blocker <- Stream.resource(Blocker[IO])
-          filePath <- tempFile
-          tempDir <- tempDirectory
-          result <- Stream.eval(file.copy[IO](blocker, filePath, tempDir.resolve("newfile")))
-          exists <- Stream.eval(file.exists[IO](blocker, result))
-        } yield exists).compile.fold(true)(_ && _).unsafeRunSync() == true
-      )
+      assert((for {
+        blocker <- Stream.resource(Blocker[IO])
+        filePath <- tempFile
+        tempDir <- tempDirectory
+        result <- Stream.eval(file.copy[IO](blocker, filePath, tempDir.resolve("newfile")))
+        exists <- Stream.eval(file.exists[IO](blocker, result))
+      } yield exists).compile.fold(true)(_ && _).unsafeRunSync() == true)
     }
   }
 
@@ -282,15 +280,13 @@ class FileSuite extends BaseFileSuite {
 
   group("move") {
     test("should result in the old path being deleted") {
-      assert(
-        (for {
-          blocker <- Stream.resource(Blocker[IO])
-          filePath <- tempFile
-          tempDir <- tempDirectory
-          _ <- Stream.eval(file.move[IO](blocker, filePath, tempDir.resolve("newfile")))
-          exists <- Stream.eval(file.exists[IO](blocker, filePath))
-        } yield exists).compile.fold(false)(_ || _).unsafeRunSync() == false
-      )
+      assert((for {
+        blocker <- Stream.resource(Blocker[IO])
+        filePath <- tempFile
+        tempDir <- tempDirectory
+        _ <- Stream.eval(file.move[IO](blocker, filePath, tempDir.resolve("newfile")))
+        exists <- Stream.eval(file.exists[IO](blocker, filePath))
+      } yield exists).compile.fold(false)(_ || _).unsafeRunSync() == false)
     }
   }
 

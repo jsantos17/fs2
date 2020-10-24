@@ -92,34 +92,21 @@ sealed trait TLSContext {
 object TLSContext {
 
   /** Creates a `TLSContext` from an `SSLContext`. */
-  def fromSSLContext(
-      ctx: SSLContext,
-      blocker: Blocker
-  ): TLSContext =
+  def fromSSLContext(ctx: SSLContext, blocker: Blocker): TLSContext =
     new TLSContext {
       def client[F[_]: Concurrent: ContextShift](
           socket: Socket[F],
           params: TLSParameters,
           logger: Option[String => F[Unit]]
       ): Resource[F, TLSSocket[F]] =
-        mkSocket(
-          socket,
-          true,
-          params,
-          logger
-        )
+        mkSocket(socket, true, params, logger)
 
       def server[F[_]: Concurrent: ContextShift](
           socket: Socket[F],
           params: TLSParameters,
           logger: Option[String => F[Unit]]
       ): Resource[F, TLSSocket[F]] =
-        mkSocket(
-          socket,
-          false,
-          params,
-          logger
-        )
+        mkSocket(socket, false, params, logger)
 
       private def mkSocket[F[_]: Concurrent: ContextShift](
           socket: Socket[F],
@@ -150,13 +137,7 @@ object TLSContext {
           params: TLSParameters,
           logger: Option[String => F[Unit]]
       ): Resource[F, DTLSSocket[F]] =
-        mkDtlsSocket(
-          socket,
-          remoteAddress,
-          true,
-          params,
-          logger
-        )
+        mkDtlsSocket(socket, remoteAddress, true, params, logger)
 
       def dtlsServer[F[_]: Concurrent: ContextShift](
           socket: udp.Socket[F],
@@ -164,13 +145,7 @@ object TLSContext {
           params: TLSParameters,
           logger: Option[String => F[Unit]]
       ): Resource[F, DTLSSocket[F]] =
-        mkDtlsSocket(
-          socket,
-          remoteAddress,
-          false,
-          params,
-          logger
-        )
+        mkDtlsSocket(socket, remoteAddress, false, params, logger)
 
       private def mkDtlsSocket[F[_]: Concurrent: ContextShift](
           socket: udp.Socket[F],

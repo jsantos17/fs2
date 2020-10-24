@@ -35,15 +35,13 @@ class MemoryLeakSpec extends FunSuite {
       val free = runtime.freeMemory()
       total - free
     }
-  protected def leakTest[O](
-      name: TestOptions,
-      params: LeakTestParams = LeakTestParams()
-  )(stream: => Stream[IO, O]): Unit = leakTestF(name, params)(stream.compile.drain)
+  protected def leakTest[O](name: TestOptions, params: LeakTestParams = LeakTestParams())(
+      stream: => Stream[IO, O]
+  ): Unit = leakTestF(name, params)(stream.compile.drain)
 
-  protected def leakTestF[O](
-      name: TestOptions,
-      params: LeakTestParams = LeakTestParams()
-  )(f: => IO[Unit]): Unit =
+  protected def leakTestF[O](name: TestOptions, params: LeakTestParams = LeakTestParams())(
+      f: => IO[Unit]
+  ): Unit =
     test(name) {
       println(s"Running leak test ${name.name}")
       IO.race(

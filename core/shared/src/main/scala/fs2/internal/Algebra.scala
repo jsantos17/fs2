@@ -312,10 +312,8 @@ private[fs2] object FreeC {
 
   final case class Eval[+F[_], R](value: F[R]) extends AlgEffect[F, R]
 
-  final case class Acquire[+F[_], R](
-      resource: F[R],
-      release: (R, ExitCase[Throwable]) => F[Unit]
-  ) extends AlgEffect[F, R]
+  final case class Acquire[+F[_], R](resource: F[R], release: (R, ExitCase[Throwable]) => F[Unit])
+      extends AlgEffect[F, R]
   // NOTE: The use of a separate `G` and `PureK` is done o by-pass a compiler-crash in Scala 2.12,
   // involving GADTs with a covariant Higher-Kinded parameter. */
   final case class OpenScope[G[_]](interruptible: Option[Concurrent[G]])
@@ -349,9 +347,9 @@ private[fs2] object FreeC {
   /** Like `scope` but allows this scope to be interrupted.
     * Note that this may fail with `Interrupted` when interruption occurred
     */
-  private[fs2] def interruptScope[F[_], O](
-      s: FreeC[F, O, Unit]
-  )(implicit F: Concurrent[F]): FreeC[F, O, Unit] =
+  private[fs2] def interruptScope[F[_], O](s: FreeC[F, O, Unit])(
+      implicit F: Concurrent[F]
+  ): FreeC[F, O, Unit] =
     scope0(s, Some(F))
 
   private def scope0[F[_], O](
@@ -435,9 +433,7 @@ private[fs2] object FreeC {
             }
           view.step match {
             case output: Output[X] =>
-              interruptGuard(scope)(
-                F.pure(Out(output.values, scope, view.next(FreeC.Result.unit)))
-              )
+              interruptGuard(scope)(F.pure(Out(output.values, scope, view.next(FreeC.Result.unit))))
 
             case uU: Step[f, y] =>
               val u: Step[F, y] = uU.asInstanceOf[Step[F, y]]
@@ -456,13 +452,10 @@ private[fs2] object FreeC {
                       // if we originally swapped scopes we want to return the original
                       // scope back to the go as that is the scope that is expected to be here.
                       val nextScope = if (u.scope.isEmpty) outScope else scope
-                      val result = Result.Pure(
-                        Some((head, outScope.id, tail.asInstanceOf[FreeC[f, y, Unit]]))
-                      )
+                      val result =
+                        Result.Pure(Some((head, outScope.id, tail.asInstanceOf[FreeC[f, y, Unit]])))
                       val next = view.next(result).asInstanceOf[FreeC[F, X, Unit]]
-                      interruptGuard(nextScope)(
-                        go(nextScope, extendedTopLevelScope, next)
-                      )
+                      interruptGuard(nextScope)(go(nextScope, extendedTopLevelScope, next))
 
                     case Right(Interrupted(scopeId, err)) =>
                       go(scope, extendedTopLevelScope, view.next(Result.Interrupted(scopeId, err)))
@@ -472,18 +465,14 @@ private[fs2] object FreeC {
                   }
 
                 case None =>
-                  F.raiseError(
-                    new RuntimeException(
-                      s"""|Scope lookup failure!
+                  F.raiseError(new RuntimeException(s"""|Scope lookup failure!
                           |
                           |This is typically caused by uncons-ing from two or more streams in the same Pull.
                           |To do this safely, use `s.pull.stepLeg` instead of `s.pull.uncons` or a variant
                           |thereof. See the implementation of `Stream#zipWith_` for an example.
                           |
                           |Scope id: ${scope.id}
-                          |Step: ${u}""".stripMargin
-                    )
-                  )
+                          |Step: ${u}""".stripMargin))
               }
 
             case eval: Eval[F, r] =>
@@ -652,10 +641,9 @@ private[fs2] object FreeC {
         }
     }
 
-  def translate[F[_], G[_], O](
-      stream: FreeC[F, O, Unit],
-      fK: F ~> G
-  )(implicit G: TranslateInterrupt[G]): FreeC[G, O, Unit] = {
+  def translate[F[_], G[_], O](stream: FreeC[F, O, Unit], fK: F ~> G)(
+      implicit G: TranslateInterrupt[G]
+  ): FreeC[G, O, Unit] = {
     val concurrent: Option[Concurrent[G]] = G.concurrentInstance
     def translateAlgEffect[R](self: AlgEffect[F, R]): AlgEffect[G, R] =
       self match {
@@ -693,12 +681,10 @@ private[fs2] object FreeC {
 
             case stepU: Step[f, x] =>
               val step: Step[F, x] = stepU.asInstanceOf[Step[F, x]]
-              Step[G, x](
-                stream = translateStep[x](step.stream, false),
-                scope = step.scope
-              ).transformWith { r =>
-                translateStep[X](view.next(r.asInstanceOf[Result[y]]), isMainLevel)
-              }
+              Step[G, x](stream = translateStep[x](step.stream, false), scope = step.scope)
+                .transformWith { r =>
+                  translateStep[X](view.next(r.asInstanceOf[Result[y]]), isMainLevel)
+                }
 
             case alg: AlgEffect[F, r] =>
               translateAlgEffect(alg)

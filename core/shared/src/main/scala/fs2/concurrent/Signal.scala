@@ -58,9 +58,7 @@ object Signal extends SignalLowPriorityImplicits {
       def discrete = Stream(a) ++ Stream.eval_(F.never)
     }
 
-  implicit def applicativeInstance[F[_]](implicit
-      F: Concurrent[F]
-  ): Applicative[Signal[F, *]] =
+  implicit def applicativeInstance[F[_]](implicit F: Concurrent[F]): Applicative[Signal[F, *]] =
     new Applicative[Signal[F, *]] {
       override def map[A, B](fa: Signal[F, A])(f: A => B): Signal[F, B] =
         Signal.map(fa)(f)
@@ -79,8 +77,8 @@ object Signal extends SignalLowPriorityImplicits {
         }
     }
 
-  private def nondeterministicZip[F[_], A0, A1](xs: Stream[F, A0], ys: Stream[F, A1])(implicit
-      F: Concurrent[F]
+  private def nondeterministicZip[F[_], A0, A1](xs: Stream[F, A0], ys: Stream[F, A1])(
+      implicit F: Concurrent[F]
   ): Stream[F, (A0, A1)] = {
     type PullOutput = (A0, A1, Stream[F, A0], Stream[F, A1])
     val firstPull: OptionT[Pull[F, PullOutput, *], Unit] = for {
