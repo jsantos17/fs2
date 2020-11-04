@@ -883,32 +883,31 @@ object Pull extends PullLowPriority {
 
     val initFk: F ~> F = cats.arrow.FunctionK.id[F]
 
-    def outerLoop(scope: CompileScope[F], accB: B, stream: Pull[F, O, Unit]): F[B] =
-      go[F, O](scope, None, initFk, stream).flatMap {
-        case Done(_) => F.pure(accB)
-        case out: Out[f, o] =>
-          try outerLoop(
-            out.scope,
-            foldChunk(accB, out.head),
-            out.tail.asInstanceOf[Pull[f, O, Unit]]
-          )
-          catch {
-            case NonFatal(e) =>
-              val handled = viewL(out.tail) match {
-                case Result.Succeeded(_) => Result.Fail(e)
-                case Result.Fail(e2)     => Result.Fail(CompositeFailure(e2, e))
-                case Result.Interrupted(ctx, err) =>
-                  Result.Interrupted(ctx, err.map(t => CompositeFailure(e, t)).orElse(Some(e)))
-                case v @ View(_) => v.next(Result.Fail(e))
-              }
+    class OuterHandle(accB: B) extends RunR[F, O, F[B]] { self =>
+      def done(scope: CompileScope[F]): F[B] = F.pure(accB)
 
-              outerLoop(out.scope, accB, handled.asInstanceOf[Pull[f, O, Unit]])
-          }
-        case Interrupted(_, None)      => F.pure(accB)
-        case Interrupted(_, Some(err)) => F.raiseError(err)
-      }
+      def out(head: Chunk[O], scope: CompileScope[F], tail: Pull[F, O, Unit]): F[B] =
+        try outerLoop(scope, new OuterHandle(foldChunk(accB, head)), tail)
+        catch {
+          case NonFatal(e) =>
+            val handled: Pull[F, O, Unit] = viewL(tail) match {
+              case Result.Succeeded(_) => Result.Fail(e)
+              case Result.Fail(e2)     => Result.Fail(CompositeFailure(e2, e))
+              case Result.Interrupted(ctx, err) =>
+                Result.Interrupted(ctx, err.map(t => CompositeFailure(e, t)).orElse(Some(e)))
+              case v: View[F, O, Unit] => v.next(Result.Fail(e))
+            }
+            outerLoop(scope, self, handled)
+        }
 
-    outerLoop(initScope, init, stream)
+      def interrupted(scopeId: Token, err: Option[Throwable]): F[B] =
+        err.fold(F.pure(accB))(F.raiseError)
+    }
+
+    def outerLoop(scope: CompileScope[F], handle: OuterHandle, stream: Pull[F, O, Unit]): F[B] =
+      go[F, O](scope, None, initFk, stream).flatMap(handle)
+
+    outerLoop(initScope, new OuterHandle(init), stream)
   }
 
   private[fs2] def flatMapOutput[F[_], F2[x] >: F[x], O, O2](
