@@ -33,16 +33,19 @@ package object reactivestreams {
     *
     * The publisher only receives a subscriber when the stream is run.
     */
-  def fromPublisher[F[_]: ConcurrentEffect, A](p: Publisher[A]): Stream[F, A] =
+  def fromPublisher[F[_]: ConcurrentEffect, A](p: Publisher[A], batchSize: Int = 1): Stream[F, A] =
     Stream
-      .eval(StreamSubscriber[F, A])
+      .eval(StreamSubscriber[F, A](batchSize))
       .flatMap(s => s.sub.stream(Sync[F].delay(p.subscribe(s))))
 
   implicit final class PublisherOps[A](val publisher: Publisher[A]) extends AnyVal {
 
     /** Creates a lazy stream from an `org.reactivestreams.Publisher` */
     def toStream[F[_]: ConcurrentEffect]: Stream[F, A] =
-      fromPublisher(publisher)
+      fromPublisher(publisher, 1)
+
+    def toStream[F[_]: ConcurrentEffect](batchSize: Int): Stream[F, A] =
+      fromPublisher(publisher, batchSize)
   }
 
   implicit final class StreamOps[F[_], A](val stream: Stream[F, A]) {
