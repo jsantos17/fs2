@@ -1,1 +1,1 @@
-version in ThisBuild := "2.4.4-unnone"
+version in ThisBuild := "2.4.4-term-q"
