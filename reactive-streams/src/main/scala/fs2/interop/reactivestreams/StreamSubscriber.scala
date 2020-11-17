@@ -127,7 +127,7 @@ object StreamSubscriber {
         case OnNext(a) => {
           case WaitingOnUpstream(s) if batchSize > 1 => Receiving(s) -> q.enqueue1(a.some.asRight)
           case WaitingOnUpstream(s) if batchSize === 1 => Idle(s) -> q.enqueue1(a.some.asRight)
-          case Receiving(s) if counter >= batchSize => NextBatch(s) -> q.enqueue1(a.some.asRight)
+          case Receiving(s) if counter % batchSize === 0 => NextBatch(s) -> q.enqueue1(a.some.asRight)
           case Receiving(s) => Receiving(s) -> q.enqueue1(a.some.asRight)
           case DownstreamCancellation => DownstreamCancellation -> F.unit
           case o => o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
@@ -153,7 +153,7 @@ object StreamSubscriber {
             RequestBeforeSubscription -> F.unit
           case Idle(sub) =>
             WaitingOnUpstream(sub) -> F.delay(sub.request(batchSize))
-          case NextBatch(s) =>
+          case NextBatch(sub) =>
             Receiving(sub) -> F.delay(sub.request(batchSize))
           case Receiving(sub) =>
             Receiving(sub) -> F.unit
