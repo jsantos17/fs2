@@ -120,6 +120,7 @@ object StreamSubscriber {
         case OnSubscribe(s) => {
           case RequestBeforeSubscription => WaitingOnUpstream(s) -> F.delay(s.request(batchSize))
           case Uninitialized => Idle(s) -> F.unit
+          case Idle(_) => Idle(s) -> F.delay(s.cancel)
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
             o -> (F.delay(s.cancel) >> F.raiseError(err))
