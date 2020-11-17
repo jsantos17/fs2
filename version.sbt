@@ -1,1 +1,1 @@
-version in ThisBuild := "2.4.4-print-dq5"
+version in ThisBuild := "2.4.4-print-dq6"
