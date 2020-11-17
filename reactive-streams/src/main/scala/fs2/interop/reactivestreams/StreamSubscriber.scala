@@ -169,20 +169,20 @@ object StreamSubscriber {
     (Ref.of[F, State](Uninitialized), Ref.of[F, Int](0)) mapN {
       case (ref, counter) =>
         new FSM[F, A] {
-          def nextState(in: Input): F[Unit] = counter.get.flatMap(c => ref.modify(step(in, c)).flatten)
+          def nextState(in: Input): F[Unit] =
+            counter.get.flatMap(c => ref.modify(step(in, c)).flatten)
           def onSubscribe(s: Subscription): F[Unit] =
-            Concurrent[F].delay(println("Calling onSubscribe")) >> nextState(OnSubscribe(s))
+            nextState(OnSubscribe(s))
           def onNext(a: A): F[Unit] =
-            Concurrent[F].delay(println("Calling onNext")) >> counter.update(_ + 1) >> nextState(OnNext(a))
+            counter.update(_ + 1) >> nextState(OnNext(a))
           def onError(t: Throwable): F[Unit] =
-            Concurrent[F].delay(println("Calling onError")) >> nextState(OnError(t))
+            nextState(OnError(t))
           def onComplete: F[Unit] =
-            Concurrent[F].delay(println("Calling onComplete")) >> nextState(OnComplete)
+            nextState(OnComplete)
           def onFinalize: F[Unit] =
-            Concurrent[F].delay(println("Calling onFinalize")) >> nextState(OnFinalize)
+            nextState(OnFinalize)
           def dequeue1: F[Chunk[Either[Throwable, Option[A]]]] =
-            Concurrent[F].delay(println("Calling dequeue1")) >>
-              counter.get.flatMap(c => ref.modify(step(OnDequeue, c)).flatten) >> q.dequeueChunk1(batchSize)
+            counter.get.flatMap(c => ref.modify(step(OnDequeue, c)).flatten) >> q.dequeueChunk1(batchSize)
         }
     }
   }
