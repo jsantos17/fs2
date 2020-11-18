@@ -118,7 +118,7 @@ object StreamSubscriber {
     case object DownstreamCancellation extends State
     case class UpstreamError(err: Throwable) extends State
 
-    def step(in: Input, counter: Int): State => (State, F[Unit]) =
+    def step(in: Input, counter: Long): State => (State, F[Unit]) =
       in match {
         case OnSubscribe(s) => {
           case RequestBeforeSubscription => WaitingOnUpstream(s) -> F.delay(s.request(batchSize))
@@ -173,7 +173,7 @@ object StreamSubscriber {
         }
       }
 
-    (Ref.of[F, State](Uninitialized), Ref.of[F, Int](0)).mapN {
+    (Ref.of[F, State](Uninitialized), Ref.of[F, Long](0)).mapN {
       case (ref, counter) =>
         new FSM[F, A] {
           def nextState(in: Input): F[Unit] =
