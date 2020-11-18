@@ -55,12 +55,14 @@ final class StreamSubscriber[F[_]: ConcurrentEffect, A](val sub: StreamSubscribe
 
 object StreamSubscriber {
   def apply[F[_]: ConcurrentEffect, A]: F[StreamSubscriber[F, A]] =
-    Queue.bounded[F, Either[Throwable, Option[A]]](1).flatMap(
-      fsm[F, A](_, 1).map(new StreamSubscriber(_)))
+    Queue
+      .bounded[F, Either[Throwable, Option[A]]](1)
+      .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
 
   def apply[F[_]: ConcurrentEffect, A](batchSize: Int): F[StreamSubscriber[F, A]] =
-    Queue.bounded[F, Either[Throwable, Option[A]]](batchSize).flatMap(
-      fsm[F, A](_, batchSize).map(new StreamSubscriber(_)))
+    Queue
+      .bounded[F, Either[Throwable, Option[A]]](batchSize)
+      .flatMap(fsm[F, A](_, batchSize).map(new StreamSubscriber(_)))
 
   /** A finite state machine describing the subscriber */
   private[reactivestreams] trait FSM[F[_], A] {
@@ -92,9 +94,10 @@ object StreamSubscriber {
         .unNoneTerminate
   }
 
-  private[reactivestreams] def fsm[F[_], A](q: Queue[F, Either[Throwable, Option[A]]], batchSize: Int)(
-    implicit F: Concurrent[F])
-      : F[FSM[F, A]] = {
+  private[reactivestreams] def fsm[F[_], A](
+      q: Queue[F, Either[Throwable, Option[A]]],
+      batchSize: Int
+  )(implicit F: Concurrent[F]): F[FSM[F, A]] = {
 
     sealed trait Input
     case class OnSubscribe(s: Subscription) extends Input
@@ -119,35 +122,37 @@ object StreamSubscriber {
       in match {
         case OnSubscribe(s) => {
           case RequestBeforeSubscription => WaitingOnUpstream(s) -> F.delay(s.request(batchSize))
-          case Uninitialized => Idle(s) -> F.unit
-          case Idle(_) => Idle(s) -> F.delay(s.cancel)
+          case Uninitialized             => Idle(s) -> F.unit
+          case Idle(_)                   => Idle(s) -> F.delay(s.cancel)
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
             o -> (F.delay(s.cancel) >> F.raiseError(err))
         }
         case OnNext(a) => {
-          case WaitingOnUpstream(s) if batchSize > 1 => Receiving(s) -> q.enqueue1(a.some.asRight)
+          case WaitingOnUpstream(s) if batchSize > 1   => Receiving(s) -> q.enqueue1(a.some.asRight)
           case WaitingOnUpstream(s) if batchSize === 1 => Idle(s) -> q.enqueue1(a.some.asRight)
-          case Receiving(s) if counter % batchSize === 0 => NextBatch(s) -> q.enqueue1(a.some.asRight)
-          case Receiving(s) => Receiving(s) -> q.enqueue1(a.some.asRight)
+          case Receiving(s) if counter % batchSize === 0 =>
+            NextBatch(s) -> q.enqueue1(a.some.asRight)
+          case Receiving(s)           => Receiving(s) -> q.enqueue1(a.some.asRight)
           case DownstreamCancellation => DownstreamCancellation -> F.unit
-          case o => o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
+          case o                      => o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
         }
         case OnComplete => {
           case WaitingOnUpstream(_) => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case Receiving(_) => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case _ => UpstreamCompletion -> F.unit
+          case Receiving(_)         => UpstreamCompletion -> q.enqueue1(None.asRight)
+          case _                    => UpstreamCompletion -> F.unit
         }
         case OnError(e) => {
-          case WaitingOnUpstream(_) => UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
+          case WaitingOnUpstream(_) =>
+            UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case Receiving(_) => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case _ => UpstreamError(e) -> F.unit
+          case _            => UpstreamError(e) -> F.unit
         }
         case OnFinalize => {
           case WaitingOnUpstream(sub) =>
             DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
           case Idle(sub) => DownstreamCancellation -> F.delay(sub.cancel)
-          case o => o -> F.unit
+          case o         => o -> F.unit
         }
         case OnDequeue => {
           case Uninitialized =>
@@ -163,11 +168,12 @@ object StreamSubscriber {
           case UpstreamCompletion =>
             UpstreamCompletion -> q.enqueue1(None.asRight)
           case o =>
-            o -> (q.enqueue1((new Error(s"received request in invalid state [$o]")).asLeft) >> q.enqueue1(None.asRight))
+            o -> (q.enqueue1((new Error(s"received request in invalid state [$o]")).asLeft) >> q
+              .enqueue1(None.asRight))
         }
       }
 
-    (Ref.of[F, State](Uninitialized), Ref.of[F, Int](0)) mapN {
+    (Ref.of[F, State](Uninitialized), Ref.of[F, Int](0)).mapN {
       case (ref, counter) =>
         new FSM[F, A] {
           def nextState(in: Input): F[Unit] =
@@ -183,7 +189,9 @@ object StreamSubscriber {
           def onFinalize: F[Unit] =
             nextState(OnFinalize)
           def dequeue1: F[Chunk[Either[Throwable, Option[A]]]] =
-            counter.get.flatMap(c => ref.modify(step(OnDequeue, c)).flatten) >> q.dequeueChunk1(batchSize)
+            counter.get.flatMap(c => ref.modify(step(OnDequeue, c)).flatten) >> q.dequeueChunk1(
+              batchSize
+            )
         }
     }
   }
