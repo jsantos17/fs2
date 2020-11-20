@@ -150,6 +150,8 @@ object StreamSubscriber {
         case OnError(e) => {
           case Receiving(_) =>
             UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
+          case Idle(_) =>
+            UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case _ =>
            UpstreamError(e) -> F.unit
         }
@@ -167,11 +169,11 @@ object StreamSubscriber {
           case Receiving(sub) =>
             Receiving(sub) -> F.unit
           case err @ UpstreamError(e) =>
-            err -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
+            err -> q.enqueue1(e.asLeft)
           case Idle(sub) =>
             Receiving(sub) -> F.delay(sub.request(maxDemand)) // request on first dequeue
           case UpstreamCompletion =>
-            UpstreamCompletion -> q.enqueue1(None.asRight)
+            UpstreamCompletion -> F.unit
           case st =>
             st -> F.unit
         }
