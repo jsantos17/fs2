@@ -55,9 +55,7 @@ final class StreamSubscriber[F[_]: ConcurrentEffect, A](val sub: StreamSubscribe
 
 object StreamSubscriber {
   def apply[F[_]: ConcurrentEffect, A]: F[StreamSubscriber[F, A]] =
-    Queue
-      .bounded[F, Either[Throwable, Option[A]]](3)
-      .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
+    apply[F, A](1)
 
   def apply[F[_]: ConcurrentEffect, A](maxDemand: Int): F[StreamSubscriber[F, A]] =
     Queue
@@ -125,6 +123,8 @@ object StreamSubscriber {
             Idle(prev) -> F.delay(s.cancel)
           case Receiving(prev) => // we got a second subscription. cancel it
             Receiving(prev) -> F.delay(s.cancel)
+          case DownstreamCancellation =>
+            DownstreamCancellation -> F.unit
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
             o -> (F.delay(s.cancel) >> F.raiseError(err))
@@ -189,7 +189,7 @@ object StreamSubscriber {
             chunk <- q.dequeueChunk1(maxDemand)
             _ <- ref.get flatMap {
               case Receiving(s) => F.delay(s.request(chunk.size))
-              case _ => q.enqueue1(None.asRight)
+              case _ => F.unit
             }
           } yield chunk
       }
