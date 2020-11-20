@@ -56,13 +56,13 @@ final class StreamSubscriber[F[_]: ConcurrentEffect, A](val sub: StreamSubscribe
 object StreamSubscriber {
   def apply[F[_]: ConcurrentEffect, A]: F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](1)
-      .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
+      .bounded[F, Either[Throwable, Option[A]]](3)
+      .flatMap(fsm[F, A](_, 3).map(new StreamSubscriber(_)))
 
   def apply[F[_]: ConcurrentEffect, A](batchSize: Int): F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](batchSize)
-      .flatMap(fsm[F, A](_, batchSize).map(new StreamSubscriber(_)))
+      .bounded[F, Either[Throwable, Option[A]]](batchSize * 3)
+      .flatMap(fsm[F, A](_, batchSize * 3).map(new StreamSubscriber(_)))
 
   /** A finite state machine describing the subscriber */
   private[reactivestreams] trait FSM[F[_], A] {
@@ -110,7 +110,6 @@ object StreamSubscriber {
     sealed trait State
     case object Uninitialized extends State
     case class Idle(sub: Subscription) extends State
-    case class NextBatch(sub: Subscription) extends State
     case class Receiving(sub: Subscription) extends State
     case object RequestBeforeSubscription extends State
     case class WaitingOnUpstream(sub: Subscription) extends State
@@ -118,80 +117,128 @@ object StreamSubscriber {
     case object DownstreamCancellation extends State
     case class UpstreamError(err: Throwable) extends State
 
-    def step(in: Input, counter: Long): State => (State, F[Unit]) =
+    def step(in: Input): State => F[State] =
       in match {
         case OnSubscribe(s) => {
-          case RequestBeforeSubscription => WaitingOnUpstream(s) -> F.delay(s.request(batchSize))
-          case Uninitialized             => Idle(s) -> F.unit
-          case Idle(_)                   => Idle(s) -> F.delay(s.cancel)
+          case RequestBeforeSubscription =>
+            F.delay(s.request(batchSize)).as(WaitingOnUpstream(s))
+          case Uninitialized =>
+            (Idle(s): State).pure[F]
+          case Idle(_) =>
+            F.delay(s.cancel).as(Idle(s))
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
-            o -> (F.delay(s.cancel) >> F.raiseError(err))
+            (F.delay(s.cancel) >> F.raiseError(err)).as(o)
         }
         case OnNext(a) => {
-          case WaitingOnUpstream(s) if batchSize > 1   => Receiving(s) -> q.enqueue1(a.some.asRight)
-          case WaitingOnUpstream(s) if batchSize === 1 => Idle(s) -> q.enqueue1(a.some.asRight)
-          case Receiving(s) if counter % batchSize === 0 =>
-            NextBatch(s) -> q.enqueue1(a.some.asRight)
-          case Receiving(s)           => Receiving(s) -> q.enqueue1(a.some.asRight)
-          case DownstreamCancellation => DownstreamCancellation -> F.unit
-          case o                      => o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
+          case WaitingOnUpstream(s) =>
+            q.enqueue1(a.some.asRight).as(Receiving(s))
+          case Receiving(s) =>
+            q.enqueue1(a.some.asRight).as(Receiving(s))
+          case Idle(s) =>
+            q.enqueue1(a.some.asRight).as(Receiving(s))
+          case DownstreamCancellation =>
+            (DownstreamCancellation: State).pure[F]
+          case o =>
+            F.raiseError(new Error(s"received record [$a] in invalid state [$o]")).as(o)
         }
         case OnComplete => {
-          case WaitingOnUpstream(_) => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case Receiving(_)         => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case _                    => UpstreamCompletion -> F.unit
+          case WaitingOnUpstream(_) =>
+            q.enqueue1(None.asRight).as(UpstreamCompletion)
+          case Receiving(_) =>
+            q.enqueue1(None.asRight).as(UpstreamCompletion)
+          case _ =>
+            (UpstreamCompletion: State).pure[F]
         }
         case OnError(e) => {
           case WaitingOnUpstream(_) =>
-            UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
-          case Receiving(_) => UpstreamCompletion -> q.enqueue1(None.asRight)
-          case _            => UpstreamError(e) -> F.unit
+            (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight)).as(UpstreamError(e))
+          case Receiving(_) =>
+            q.enqueue1(None.asRight).as(UpstreamError(e))
+          case _ => (UpstreamError(e): State).pure[F]
         }
         case OnFinalize => {
           case WaitingOnUpstream(sub) =>
-            DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
-          case Idle(sub) => DownstreamCancellation -> F.delay(sub.cancel)
-          case o         => o -> F.unit
+            (F.delay(sub.cancel) >> q.enqueue1(None.asRight)).as(DownstreamCancellation)
+          case Idle(sub) =>
+            F.delay(sub.cancel).as(DownstreamCancellation)
+          case Receiving(sub) =>
+            F.delay(sub.cancel).as(DownstreamCancellation)
+          case o =>
+            o.pure[F]
         }
         case OnDequeue => {
           case Uninitialized =>
-            RequestBeforeSubscription -> F.unit
-          case Idle(sub) =>
-            WaitingOnUpstream(sub) -> F.delay(sub.request(batchSize))
-          case NextBatch(sub) =>
-            Receiving(sub) -> F.delay(sub.request(batchSize))
+            (RequestBeforeSubscription: State).pure[F]
           case Receiving(sub) =>
-            Receiving(sub) -> F.unit
+            (Receiving(sub): State).pure[F]
           case err @ UpstreamError(e) =>
-            err -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
+            (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight)).as(err)
+          case Idle(sub) =>
+            F.delay(sub.request(batchSize)).as(WaitingOnUpstream(sub)) // request on first dequeue
           case UpstreamCompletion =>
-            UpstreamCompletion -> q.enqueue1(None.asRight)
-          case o =>
-            o -> (q.enqueue1((new Error(s"received request in invalid state [$o]")).asLeft) >> q
-              .enqueue1(None.asRight))
+            F.delay(println("Terminating queue on OnDequeue UpstreamCompletion")) >> q.enqueue1(None.asRight).as(UpstreamCompletion)
+          case st => st.pure[F]
         }
       }
 
-    (Ref.of[F, State](Uninitialized), Ref.of[F, Long](0)).mapN {
-      case (ref, counter) =>
+    (Ref.of[F, State](Uninitialized)) map {
+      case (ref) =>
         new FSM[F, A] {
           def nextState(in: Input): F[Unit] =
-            counter.get.flatMap(c => ref.modify(step(in, c)).flatten)
+            for {
+              st <- ref.get
+              updated <- step(in)(st)
+              _ <- F.delay(println(s"nextState. State: $updated"))
+              _ <- ref.set(updated)
+            } yield ()
           def onSubscribe(s: Subscription): F[Unit] =
-            nextState(OnSubscribe(s))
+            F.delay(println("Calling on onSubscribe")) >> nextState(OnSubscribe(s))
           def onNext(a: A): F[Unit] =
-            counter.update(_ + 1) >> nextState(OnNext(a))
+            F.delay(println("Calling on onNext")) >> nextState(OnNext(a))
           def onError(t: Throwable): F[Unit] =
-            nextState(OnError(t))
+            F.delay(println("Calling on onError")) >> nextState(OnError(t))
           def onComplete: F[Unit] =
-            nextState(OnComplete)
+            F.delay(println("Calling on onComplete")) >> nextState(OnComplete)
           def onFinalize: F[Unit] =
-            nextState(OnFinalize)
+            F.delay(println("Calling on onFinalize")) >> nextState(OnFinalize)
           def dequeue1: F[Chunk[Either[Throwable, Option[A]]]] =
-            counter.get.flatMap(c => ref.modify(step(OnDequeue, c)).flatten) >> q.dequeueChunk1(
-              batchSize
-            )
+            for {
+              _ <- F.delay(println("Calling on onDequeue1"))
+              st <- ref.get
+
+              _ <- F.delay(println(s"Calling step with st: $st"))
+              updated <- step(OnDequeue)(st)
+              _ <- F.delay(println(s"Stepped"))
+
+              _ <- F.delay(println("Going to dequeue"))
+              chunk <- q.dequeueChunk1(batchSize)
+              _ <- F.delay(println("Dequeued"))
+
+              _ <- ref.set(updated)
+              _ <- st match {
+                case WaitingOnUpstream(s) =>
+                  for {
+                    _ <- F.delay(println("WaitingOnUpstream: Requesting more results after dequeue"))
+                    _ <- F.delay(s.request(batchSize))
+                  } yield ()
+                case Receiving(s) =>
+                  for {
+                    _ <- F.delay(println("Receiving: Requesting more results after dequeue"))
+                    _ <- F.delay(s.request(batchSize))
+                  } yield ()
+                case Idle(s) =>
+                  for {
+                    _ <- F.delay(println("Idle: Requesting more results after dequeue"))
+                    _ <- F.delay(s.request(batchSize))
+                  } yield ()
+                case s => for {
+                  _ <- F.delay(println("Not requesting more results and terminating queue"))
+                  _ <- q.enqueue1(None.asRight)
+                  _ <- F.delay(println(s"dequeue1: State: $s"))
+                } yield ()
+              }
+            } yield chunk
         }
     }
   }
