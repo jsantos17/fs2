@@ -110,7 +110,6 @@ object StreamSubscriber {
     case class Idle(sub: Subscription) extends State
     case class Receiving(sub: Subscription) extends State
     case object RequestBeforeSubscription extends State
-    case class WaitingOnUpstream(sub: Subscription) extends State
     case object UpstreamCompletion extends State
     case object DownstreamCancellation extends State
     case class UpstreamError(err: Throwable) extends State
@@ -119,18 +118,18 @@ object StreamSubscriber {
       in match {
         case OnSubscribe(s) => {
           case RequestBeforeSubscription =>
-            WaitingOnUpstream(s) -> F.delay(s.request(maxDemand))
+            Receiving(s) -> F.delay(s.request(maxDemand))
           case Uninitialized =>
             Idle(s) -> F.unit
-          case Idle(_) =>
-            Idle(s) -> F.delay(s.cancel)
+          case Idle(prev) =>
+            Idle(prev) -> F.delay(s.cancel)
+          case Receiving(prev) =>
+            Receiving(prev) -> F.delay(s.cancel)
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
             o -> (F.delay(s.cancel) >> F.raiseError(err))
         }
         case OnNext(a) => {
-          case WaitingOnUpstream(s) =>
-            Receiving(s) -> q.enqueue1(a.some.asRight)
           case Receiving(s) =>
             Receiving(s) -> q.enqueue1(a.some.asRight)
           case Idle(s) =>
@@ -141,8 +140,6 @@ object StreamSubscriber {
             o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
         }
         case OnComplete => {
-          case WaitingOnUpstream(_) =>
-            UpstreamCompletion -> q.enqueue1(None.asRight)
           case Receiving(_) =>
             UpstreamCompletion -> q.enqueue1(None.asRight)
           case Idle(_) =>
@@ -151,16 +148,12 @@ object StreamSubscriber {
             UpstreamCompletion -> F.unit
         }
         case OnError(e) => {
-          case WaitingOnUpstream(_) =>
-            UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case Receiving(_) =>
             UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case _ =>
            UpstreamError(e) -> F.unit
         }
         case OnFinalize => {
-          case WaitingOnUpstream(sub) =>
-            DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
           case Idle(sub) =>
             DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
           case Receiving(sub) =>
@@ -176,7 +169,7 @@ object StreamSubscriber {
           case err @ UpstreamError(e) =>
             err -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case Idle(sub) =>
-            WaitingOnUpstream(sub) -> F.delay(sub.request(maxDemand)) // request on first dequeue
+            Receiving(sub) -> F.delay(sub.request(maxDemand)) // request on first dequeue
           case UpstreamCompletion =>
             UpstreamCompletion -> q.enqueue1(None.asRight)
           case st =>
@@ -203,7 +196,6 @@ object StreamSubscriber {
             _ <- ref.modify(step(OnDequeue)).flatten
             chunk <- q.dequeueChunk1(maxDemand)
             _ <- ref.get flatMap {
-              case WaitingOnUpstream(s) => F.delay(s.request(chunk.size))
               case Receiving(s) => F.delay(s.request(chunk.size))
               case Idle(s) => F.delay(s.request(chunk.size))
               case _ => q.enqueue1(None.asRight)
