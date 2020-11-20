@@ -59,10 +59,10 @@ object StreamSubscriber {
       .bounded[F, Either[Throwable, Option[A]]](2)
       .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
 
-  def apply[F[_]: ConcurrentEffect, A](batchSize: Int): F[StreamSubscriber[F, A]] =
+  def apply[F[_]: ConcurrentEffect, A](maxDemand: Int): F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](batchSize * 2)
-      .flatMap(fsm[F, A](_, batchSize).map(new StreamSubscriber(_)))
+      .bounded[F, Either[Throwable, Option[A]]](maxDemand * 2)
+      .flatMap(fsm[F, A](_, maxDemand).map(new StreamSubscriber(_)))
 
   /** A finite state machine describing the subscriber */
   private[reactivestreams] trait FSM[F[_], A] {
@@ -94,10 +94,8 @@ object StreamSubscriber {
         .unNoneTerminate
   }
 
-  private[reactivestreams] def fsm[F[_], A](
-      q: Queue[F, Either[Throwable, Option[A]]],
-      batchSize: Int
-  )(implicit F: Concurrent[F]): F[FSM[F, A]] = {
+  private[reactivestreams] def fsm[F[_], A](q: Queue[F, Either[Throwable, Option[A]]], maxDemand: Int)(
+    implicit F: Concurrent[F]): F[FSM[F, A]] = {
 
     sealed trait Input
     case class OnSubscribe(s: Subscription) extends Input
@@ -121,7 +119,7 @@ object StreamSubscriber {
       in match {
         case OnSubscribe(s) => {
           case RequestBeforeSubscription =>
-            F.delay(s.request(batchSize)).as(WaitingOnUpstream(s))
+            F.delay(s.request(maxDemand)).as(WaitingOnUpstream(s))
           case Uninitialized =>
             (Idle(s): State).pure[F]
           case Idle(_) =>
@@ -148,7 +146,7 @@ object StreamSubscriber {
           case Receiving(_) =>
             q.enqueue1(None.asRight).as(UpstreamCompletion)
           case Idle(_) =>
-            q.enqueue1(None.asRight).as(UpstreamCompletion)
+            q.enqueue1(None.asRight).as(UpstreamCompletion) // empty queues will complete while idle
           case _ =>
             (UpstreamCompletion: State).pure[F]
         }
@@ -157,7 +155,8 @@ object StreamSubscriber {
             (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight)).as(UpstreamError(e))
           case Receiving(_) =>
             q.enqueue1(None.asRight).as(UpstreamError(e))
-          case _ => (UpstreamError(e): State).pure[F]
+          case _ =>
+            (UpstreamError(e): State).pure[F]
         }
         case OnFinalize => {
           case WaitingOnUpstream(sub) =>
@@ -177,7 +176,7 @@ object StreamSubscriber {
           case err @ UpstreamError(e) =>
             (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight)).as(err)
           case Idle(sub) =>
-            F.delay(sub.request(batchSize)).as(WaitingOnUpstream(sub)) // request on first dequeue
+            F.delay(sub.request(maxDemand)).as(WaitingOnUpstream(sub)) // request on first dequeue
           case UpstreamCompletion =>
             q.enqueue1(None.asRight).as(UpstreamCompletion)
           case st => st.pure[F]
@@ -204,12 +203,12 @@ object StreamSubscriber {
           for {
             st <- ref.get
             updated <- step(OnDequeue)(st)
-            chunk <- q.dequeueChunk1(batchSize)
+            chunk <- q.dequeueChunk1(maxDemand)
             _ <- ref.set(updated)
             _ <- st match {
-              case WaitingOnUpstream(s) => F.delay(s.request(batchSize))
-              case Receiving(s) => F.delay(s.request(batchSize))
-              case Idle(s) => F.delay(s.request(batchSize))
+              case WaitingOnUpstream(s) => F.delay(s.request(maxDemand))
+              case Receiving(s) => F.delay(s.request(maxDemand))
+              case Idle(s) => F.delay(s.request(maxDemand))
               case _ => q.enqueue1(None.asRight)
             }
           } yield chunk
