@@ -124,7 +124,7 @@ object StreamSubscriber {
           case Receiving(prev) => // we got a second subscription. cancel it
             Receiving(prev) -> F.delay(s.cancel)
           case DownstreamCancellation =>
-            DownstreamCancellation -> F.unit
+            DownstreamCancellation -> F.delay(s.cancel)
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
             o -> (F.delay(s.cancel) >> F.raiseError(err))
@@ -156,6 +156,8 @@ object StreamSubscriber {
             DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
           case Receiving(sub) =>
             DownstreamCancellation -> (F.delay(sub.cancel) >> q.enqueue1(None.asRight))
+          case Uninitialized | RequestBeforeSubscription =>
+            DownstreamCancellation -> F.unit
           case o =>
             o -> F.unit
         }
