@@ -51,7 +51,7 @@ final class WhiteboxSubscriber[A](sub: StreamSubscriber[IO, A], probe: WhiteboxS
     probe.registerOnSubscribe(new SubscriberPuppet {
       override def triggerRequest(elements: Long): Unit =
         (0 to elements.toInt)
-          .foldLeft(IO.unit)((t, _) => t.flatMap(_ => sub.sub.dequeue1.map(_ => ())))
+          .foldLeft(IO.unit)((t, _) => t.flatMap(_ => sub.sub.dequeueChunk1.map(_ => ())))
           .unsafeRunAsync(_ => ())
 
       override def signalCancel(): Unit =
@@ -81,7 +81,7 @@ final class SubscriberBlackboxSpec
   def createSubscriber(): StreamSubscriber[IO, Int] = StreamSubscriber[IO, Int](3).unsafeRunSync()
 
   override def triggerRequest(s: Subscriber[_ >: Int]): Unit = {
-    val req = s.asInstanceOf[StreamSubscriber[IO, Int]].sub.dequeue1
+    val req = s.asInstanceOf[StreamSubscriber[IO, Int]].sub.dequeueChunk1
     (Stream.eval(timer.sleep(100.milliseconds) >> req)).compile.drain.unsafeRunAsync(_ => ())
   }
 

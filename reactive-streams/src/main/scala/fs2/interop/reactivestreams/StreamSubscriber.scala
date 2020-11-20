@@ -56,13 +56,13 @@ final class StreamSubscriber[F[_]: ConcurrentEffect, A](val sub: StreamSubscribe
 object StreamSubscriber {
   def apply[F[_]: ConcurrentEffect, A]: F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](3)
-      .flatMap(fsm[F, A](_, 3).map(new StreamSubscriber(_)))
+      .bounded[F, Either[Throwable, Option[A]]](2)
+      .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
 
   def apply[F[_]: ConcurrentEffect, A](batchSize: Int): F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](batchSize * 3)
-      .flatMap(fsm[F, A](_, batchSize * 3).map(new StreamSubscriber(_)))
+      .bounded[F, Either[Throwable, Option[A]]](batchSize * 2)
+      .flatMap(fsm[F, A](_, batchSize).map(new StreamSubscriber(_)))
 
   /** A finite state machine describing the subscriber */
   private[reactivestreams] trait FSM[F[_], A] {
@@ -83,12 +83,12 @@ object StreamSubscriber {
     def onFinalize: F[Unit]
 
     /** producer for downstream */
-    def dequeue1: F[Chunk[Either[Throwable, Option[A]]]]
+    def dequeueChunk1: F[Chunk[Either[Throwable, Option[A]]]]
 
     /** downstream stream */
     def stream(subscribe: F[Unit])(implicit ev: ApplicativeError[F, Throwable]): Stream[F, A] =
       Stream.bracket(subscribe)(_ => onFinalize) >> Stream
-        .evalUnChunk(dequeue1)
+        .evalUnChunk(dequeueChunk1)
         .repeat
         .rethrow
         .unNoneTerminate
@@ -147,6 +147,8 @@ object StreamSubscriber {
             q.enqueue1(None.asRight).as(UpstreamCompletion)
           case Receiving(_) =>
             q.enqueue1(None.asRight).as(UpstreamCompletion)
+          case Idle(_) =>
+            q.enqueue1(None.asRight).as(UpstreamCompletion)
           case _ =>
             (UpstreamCompletion: State).pure[F]
         }
@@ -182,39 +184,36 @@ object StreamSubscriber {
         }
       }
 
-    (Ref.of[F, State](Uninitialized)) map {
-      case (ref) =>
-        new FSM[F, A] {
-          def nextState(in: Input): F[Unit] =
-            for {
-              st <- ref.get
-              updated <- step(in)(st)
-              _ <- ref.set(updated)
-            } yield ()
-          def onSubscribe(s: Subscription): F[Unit] =
-            nextState(OnSubscribe(s))
-          def onNext(a: A): F[Unit] =
-            nextState(OnNext(a))
-          def onError(t: Throwable): F[Unit] =
-            nextState(OnError(t))
-          def onComplete: F[Unit] =
-            nextState(OnComplete)
-          def onFinalize: F[Unit] =
-            nextState(OnFinalize)
-          def dequeue1: F[Chunk[Either[Throwable, Option[A]]]] =
-            for {
-              st <- ref.get
-              updated <- step(OnDequeue)(st)
-              chunk <- q.dequeueChunk1(batchSize)
-              _ <- ref.set(updated)
-              _ <- st match {
-                case WaitingOnUpstream(s) => F.delay(s.request(batchSize))
-                case Receiving(s) => F.delay(s.request(batchSize))
-                case Idle(s) => F.delay(s.request(batchSize))
-                case _ => q.enqueue1(None.asRight)
-              }
-            } yield chunk
-        }
+    Ref.of[F, State](Uninitialized) map { ref =>
+      new FSM[F, A] {
+        def nextState(in: Input): F[Unit] =
+          ref.get
+            .flatMap(step(in))
+            .flatMap(ref.set)
+        def onSubscribe(s: Subscription): F[Unit] =
+          nextState(OnSubscribe(s))
+        def onNext(a: A): F[Unit] =
+          nextState(OnNext(a))
+        def onError(t: Throwable): F[Unit] =
+          nextState(OnError(t))
+        def onComplete: F[Unit] =
+          nextState(OnComplete)
+        def onFinalize: F[Unit] =
+          nextState(OnFinalize)
+        def dequeueChunk1: F[Chunk[Either[Throwable, Option[A]]]] =
+          for {
+            st <- ref.get
+            updated <- step(OnDequeue)(st)
+            chunk <- q.dequeueChunk1(batchSize)
+            _ <- ref.set(updated)
+            _ <- st match {
+              case WaitingOnUpstream(s) => F.delay(s.request(batchSize))
+              case Receiving(s) => F.delay(s.request(batchSize))
+              case Idle(s) => F.delay(s.request(batchSize))
+              case _ => q.enqueue1(None.asRight)
+            }
+          } yield chunk
+      }
     }
   }
 }
