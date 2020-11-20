@@ -56,12 +56,12 @@ final class StreamSubscriber[F[_]: ConcurrentEffect, A](val sub: StreamSubscribe
 object StreamSubscriber {
   def apply[F[_]: ConcurrentEffect, A]: F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](2)
+      .bounded[F, Either[Throwable, Option[A]]](3)
       .flatMap(fsm[F, A](_, 1).map(new StreamSubscriber(_)))
 
   def apply[F[_]: ConcurrentEffect, A](maxDemand: Int): F[StreamSubscriber[F, A]] =
     Queue
-      .bounded[F, Either[Throwable, Option[A]]](maxDemand * 2)
+      .bounded[F, Either[Throwable, Option[A]]](maxDemand + 2)
       .flatMap(fsm[F, A](_, maxDemand).map(new StreamSubscriber(_)))
 
   /** A finite state machine describing the subscriber */
@@ -140,17 +140,13 @@ object StreamSubscriber {
             o -> F.raiseError(new Error(s"received record [$a] in invalid state [$o]"))
         }
         case OnComplete => {
-          case Receiving(_) =>
-            UpstreamCompletion -> q.enqueue1(None.asRight)
-          case Idle(_) =>
+          case Receiving(_) | Idle(_) =>
             UpstreamCompletion -> q.enqueue1(None.asRight)
           case _ =>
             UpstreamCompletion -> F.unit
         }
         case OnError(e) => {
-          case Receiving(_) =>
-            UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
-          case Idle(_) =>
+          case Receiving(_) | Idle(_) =>
             UpstreamError(e) -> (q.enqueue1(e.asLeft) >> q.enqueue1(None.asRight))
           case _ =>
            UpstreamError(e) -> F.unit
@@ -166,14 +162,8 @@ object StreamSubscriber {
         case OnDequeue => {
           case Uninitialized =>
             RequestBeforeSubscription -> F.unit
-          case Receiving(sub) =>
-            Receiving(sub) -> F.unit
-          case err @ UpstreamError(e) =>
-            err -> q.enqueue1(e.asLeft)
           case Idle(sub) =>
             Receiving(sub) -> F.delay(sub.request(maxDemand)) // request on first dequeue
-          case UpstreamCompletion =>
-            UpstreamCompletion -> F.unit
           case st =>
             st -> F.unit
         }
@@ -199,7 +189,6 @@ object StreamSubscriber {
             chunk <- q.dequeueChunk1(maxDemand)
             _ <- ref.get flatMap {
               case Receiving(s) => F.delay(s.request(chunk.size))
-              case Idle(s) => F.delay(s.request(chunk.size))
               case _ => q.enqueue1(None.asRight)
             }
           } yield chunk
