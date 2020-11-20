@@ -121,9 +121,9 @@ object StreamSubscriber {
             Receiving(s) -> F.delay(s.request(maxDemand))
           case Uninitialized =>
             Idle(s) -> F.unit
-          case Idle(prev) =>
+          case Idle(prev) => // we got a second subscription. cancel it
             Idle(prev) -> F.delay(s.cancel)
-          case Receiving(prev) =>
+          case Receiving(prev) => // we got a second subscription. cancel it
             Receiving(prev) -> F.delay(s.cancel)
           case o =>
             val err = new Error(s"received subscription in invalid state [$o]")
@@ -182,23 +182,27 @@ object StreamSubscriber {
         def nextState(in: Input): F[Unit] =
           ref.modify(step(in)).flatten
         def onSubscribe(s: Subscription): F[Unit] =
-          nextState(OnSubscribe(s))
+          F.delay(println("OnSubscribe")) >> nextState(OnSubscribe(s))
         def onNext(a: A): F[Unit] =
           nextState(OnNext(a))
         def onError(t: Throwable): F[Unit] =
-          nextState(OnError(t))
+          F.delay(println("OnError")) >> nextState(OnError(t))
         def onComplete: F[Unit] =
-          nextState(OnComplete)
+          F.delay(println("OnComplete")) >> nextState(OnComplete)
         def onFinalize: F[Unit] =
-          nextState(OnFinalize)
+          F.delay(println("OnFinalize")) >> nextState(OnFinalize)
         def dequeueChunk1: F[Chunk[Either[Throwable, Option[A]]]] =
           for {
+            _ <- F.delay(println("Going to step"))
             _ <- ref.modify(step(OnDequeue)).flatten
+            _ <- F.delay(println("Stepped"))
+            _ <- F.delay(println("Going to dequeue"))
             chunk <- q.dequeueChunk1(maxDemand)
+            _ <- F.delay(println("Dequeued"))
             _ <- ref.get flatMap {
-              case Receiving(s) => F.delay(s.request(chunk.size))
-              case Idle(s) => F.delay(s.request(chunk.size))
-              case _ => q.enqueue1(None.asRight)
+              case Receiving(s) => F.delay(println(s"State: Receiving")) >> F.delay(s.request(chunk.size))
+              case Idle(s) => F.delay(println(s"State: Receiving")) >> F.delay(s.request(chunk.size))
+              case st => F.delay(println(s"State: $st")) >> q.enqueue1(None.asRight)
             }
           } yield chunk
       }
