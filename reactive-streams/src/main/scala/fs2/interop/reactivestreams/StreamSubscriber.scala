@@ -184,27 +184,23 @@ object StreamSubscriber {
         def nextState(in: Input): F[Unit] =
           ref.modify(step(in)).flatten
         def onSubscribe(s: Subscription): F[Unit] =
-          F.delay(println("OnSubscribe")) >> nextState(OnSubscribe(s))
+          nextState(OnSubscribe(s))
         def onNext(a: A): F[Unit] =
           nextState(OnNext(a))
         def onError(t: Throwable): F[Unit] =
-          F.delay(println("OnError")) >> nextState(OnError(t))
+          nextState(OnError(t))
         def onComplete: F[Unit] =
-          F.delay(println("OnComplete")) >> nextState(OnComplete)
+          nextState(OnComplete)
         def onFinalize: F[Unit] =
-          F.delay(println("OnFinalize")) >> nextState(OnFinalize)
+          nextState(OnFinalize)
         def dequeueChunk1: F[Chunk[Either[Throwable, Option[A]]]] =
           for {
-            _ <- F.delay(println("Going to step"))
             _ <- ref.modify(step(OnDequeue)).flatten
-            _ <- F.delay(println("Stepped"))
-            _ <- F.delay(println("Going to dequeue"))
             chunk <- q.dequeueChunk1(maxDemand)
-            _ <- F.delay(println("Dequeued"))
             _ <- ref.get flatMap {
-              case Receiving(s) => F.delay(println(s"State: Receiving")) >> F.delay(s.request(chunk.size))
-              case Idle(s) => F.delay(println(s"State: Receiving")) >> F.delay(s.request(chunk.size))
-              case st => F.delay(println(s"State: $st")) >> q.enqueue1(None.asRight)
+              case Receiving(s) => F.delay(s.request(chunk.size))
+              case Idle(s) => F.delay(s.request(chunk.size))
+              case _ => q.enqueue1(None.asRight)
             }
           } yield chunk
       }
