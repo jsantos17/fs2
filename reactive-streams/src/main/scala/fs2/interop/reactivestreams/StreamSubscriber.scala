@@ -177,7 +177,7 @@ object StreamSubscriber {
           case Idle(sub) =>
             F.delay(sub.request(batchSize)).as(WaitingOnUpstream(sub)) // request on first dequeue
           case UpstreamCompletion =>
-            F.delay(println("Terminating queue on OnDequeue UpstreamCompletion")) >> q.enqueue1(None.asRight).as(UpstreamCompletion)
+            q.enqueue1(None.asRight).as(UpstreamCompletion)
           case st => st.pure[F]
         }
       }
@@ -189,54 +189,29 @@ object StreamSubscriber {
             for {
               st <- ref.get
               updated <- step(in)(st)
-              _ <- F.delay(println(s"nextState. State: $updated"))
               _ <- ref.set(updated)
             } yield ()
           def onSubscribe(s: Subscription): F[Unit] =
-            F.delay(println("Calling on onSubscribe")) >> nextState(OnSubscribe(s))
+            nextState(OnSubscribe(s))
           def onNext(a: A): F[Unit] =
-            F.delay(println("Calling on onNext")) >> nextState(OnNext(a))
+            nextState(OnNext(a))
           def onError(t: Throwable): F[Unit] =
-            F.delay(println("Calling on onError")) >> nextState(OnError(t))
+            nextState(OnError(t))
           def onComplete: F[Unit] =
-            F.delay(println("Calling on onComplete")) >> nextState(OnComplete)
+            nextState(OnComplete)
           def onFinalize: F[Unit] =
-            F.delay(println("Calling on onFinalize")) >> nextState(OnFinalize)
+            nextState(OnFinalize)
           def dequeue1: F[Chunk[Either[Throwable, Option[A]]]] =
             for {
-              _ <- F.delay(println("Calling on onDequeue1"))
               st <- ref.get
-
-              _ <- F.delay(println(s"Calling step with st: $st"))
               updated <- step(OnDequeue)(st)
-              _ <- F.delay(println(s"Stepped"))
-
-              _ <- F.delay(println("Going to dequeue"))
               chunk <- q.dequeueChunk1(batchSize)
-              _ <- F.delay(println("Dequeued"))
-
               _ <- ref.set(updated)
               _ <- st match {
-                case WaitingOnUpstream(s) =>
-                  for {
-                    _ <- F.delay(println("WaitingOnUpstream: Requesting more results after dequeue"))
-                    _ <- F.delay(s.request(batchSize))
-                  } yield ()
-                case Receiving(s) =>
-                  for {
-                    _ <- F.delay(println("Receiving: Requesting more results after dequeue"))
-                    _ <- F.delay(s.request(batchSize))
-                  } yield ()
-                case Idle(s) =>
-                  for {
-                    _ <- F.delay(println("Idle: Requesting more results after dequeue"))
-                    _ <- F.delay(s.request(batchSize))
-                  } yield ()
-                case s => for {
-                  _ <- F.delay(println("Not requesting more results and terminating queue"))
-                  _ <- q.enqueue1(None.asRight)
-                  _ <- F.delay(println(s"dequeue1: State: $s"))
-                } yield ()
+                case WaitingOnUpstream(s) => F.delay(s.request(batchSize))
+                case Receiving(s) => F.delay(s.request(batchSize))
+                case Idle(s) => F.delay(s.request(batchSize))
+                case _ => q.enqueue1(None.asRight)
               }
             } yield chunk
         }
